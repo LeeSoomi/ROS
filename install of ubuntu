@@ -1,0 +1,57 @@
+화면처럼 22.04.5 LTS 업그레이드 알림이 떠 있는 상태라면 그 흐름부터 이어가면 됩니다.
+
+1. 업데이트부터 마무리하기
+지금 창에서 Yes, Upgrade Now를 누르고 진행하세요. 진행 중에는 노트북 전원 연결을 해두고, 중간에 끄지 않는 게 중요합니다. 
+업데이트가 끝나면 재부팅을 요구할 수 있는데, 재부팅까지 완료하세요.
+
+2. 업데이트가 끝났는지 확인하기
+재부팅 후 바탕화면이 뜨면, 키보드에서 Ctrl + Alt + T를 누르면 터미널이 열립니다. 터미널에 아래를 입력하고 엔터를 누르세요.
+
+lsb_release -a
+출력에 Ubuntu 22.04.5 LTS처럼 22.04.x가 나오면 정상입니다.
+
+3. 기본 패키지 최신화하기
+터미널에서 아래 두 줄을 순서대로 입력합니다. 중간에 비밀번호를 묻으면 우분투 로그인 비밀번호를 입력하면 됩니다. 
+입력할 때 화면에 글자가 안 보이는 게 정상입니다.
+sudo apt update
+sudo apt upgrade -y
+
+4. ROS2 Humble 설치 준비하기
+ROS는 우분투에 “공식 저장소 키와 패키지 목록”을 등록한 뒤 설치합니다. 
+아래 명령을 순서대로 그대로 입력하세요.
+
+sudo apt install -y software-properties-common curl gnupg
+sudo add-apt-repository universe -y
+sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+sudo apt update
+
+5. ROS2 Humble 설치하기
+가장 무난한 설치는 데스크톱 버전입니다. RViz 같은 도구까지 같이 깔립니다.
+sudo apt install -y ros-humble-desktop
+
+6. ROS 환경 설정하기
+설치 후 ROS 명령이 터미널에서 항상 인식되도록 설정합니다.
+echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+
+7. 설치가 됐는지 간단 테스트하기
+터미널을 두 개 열어서 아래처럼 실행해보세요.
+
+첫 번째 터미널
+ros2 run demo_nodes_cpp talker
+
+두 번째 터미널
+ros2 run demo_nodes_cpp listener
+
+두 번째 터미널에서 “I heard …” 같은 메시지가 계속 나오면 ROS2 설치가 정상입니다.
+
+8. 다음 단계로 넘어가기 전에 꼭 해둘 것
+지금 단계에서는 로봇팔 연결을 바로 하지 말고, ROS 워크스페이스를 만들고 패키지 구조를 잡는 게 먼저입니다. 
+아래 명령으로 작업 폴더를 만듭니다.
+mkdir -p ~/ros2_ws/src
+cd ~/ros2_ws
+colcon build
+source install/setup.bash
+
+여기까지 되면 “ROS로 프로그램을 만들 준비”가 끝난 겁니다.
