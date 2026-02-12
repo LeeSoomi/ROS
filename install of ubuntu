@@ -21,10 +21,15 @@ ROS는 우분투에 “공식 저장소 키와 패키지 목록”을 등록한 
 아래 명령을 순서대로 그대로 입력하세요.
 
 sudo apt install -y software-properties-common curl gnupg
+
 sudo add-apt-repository universe -y
+
 sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
 sudo apt update
+
 
 5. ROS2 Humble 설치하기
 가장 무난한 설치는 데스크톱 버전입니다. RViz 같은 도구까지 같이 깔립니다.
