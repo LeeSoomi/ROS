@@ -95,4 +95,28 @@ which colcon
 colcon --version
 
 
+===
+워크스페이스 환경 적용
+터미널에서 ~/ros2_ws 위치에서 아래를 실행해
+source install/setup.bash
+
+적용이 됐는지 확인
+echo $COLCON_PREFIX_PATH
+여기 출력에 .../ros2_ws/install 같은 경로가 포함되면 성공이야.
+
+그런데도 ros2 pkg list에 내가 만든 패키지가 안 보인다면
+그건 src 안에 빌드할 패키지가 아직 없어서 그래. 사진에서도 src 디렉토리 자체는 있지만, 안에 패키지 폴더가 있다는 증거는 아직 없거든.
+확인은 이렇게 해
+ls -l src
+
+src가 비어있거나 패키지가 없다면, 패키지 하나 만든 뒤 빌드
+cd ~/ros2_ws/src
+ros2 pkg create --build-type ament_python my_pkg
+cd ~/ros2_ws
+colcon build
+source install/setup.bash
+ros2 pkg list | grep my_pkg
+
+여기까지 하면 “source는 되는데 뭘 실행할 게 없다” 문제가 끝나고, 내 워크스페이스 패키지가 잡히는 상태가 돼.
+
 여기까지 되면 “ROS로 프로그램을 만들 준비”가 끝난 겁니다.
