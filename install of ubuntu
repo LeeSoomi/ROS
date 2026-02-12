@@ -59,6 +59,26 @@ cd ~/ros2_ws
 colcon build
 source install/setup.bash
 
+===================
+1 dpkg 설치
+sudo apt update
+sudo apt install -y dpkg
+
+2 dpkg가 잡히는지 확인
+which dpkg
+dpkg --version
+
+3 그다음에 colcon 확인으로 다시 돌아가기
+which colcon
+colcon --version
+
+4 만약 3에서 colcon이 아직도 안 나오면, colcon 실행 파일 들어있는 패키지를 추가 설치
+sudo apt install -y python3-colcon-core python3-colcon-ros python3-colcon-common-extensions
+which colcon
+colcon --version
+
+==============
+
 1 colcon이 실제로 생겼는지 확인
 which colcon
 colcon --version
