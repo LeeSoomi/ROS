@@ -120,3 +120,31 @@ ros2 pkg list | grep my_pkg
 여기까지 하면 “source는 되는데 뭘 실행할 게 없다” 문제가 끝나고, 내 워크스페이스 패키지가 잡히는 상태가 돼.
 
 여기까지 되면 “ROS로 프로그램을 만들 준비”가 끝난 겁니다.
+============
+
+
+이 다음에 보통 바로 확인하는 건 두 가지야.
+
+지금 워크스페이스가 ROS에서 우선으로 잡히는지
+echo $AMENT_PREFIX_PATH
+여기에도 ~/ros2_ws/install 같은 경로가 앞쪽에 나오면 좋아.
+
+패키지 인식되는지
+ros2 pkg list | grep -i <패키지이름>
+아직 패키지를 안 만들었다면, 먼저 예제 패키지 만들고 빌드하면 돼.
+
+패키지 하나 만들어서 “내가 만든 노드”까지 실행해보고 싶으면, 지금 폴더가 ~/ros2_ws니까 아래 순서로 가면 돼.
+
+패키지 만들기
+cd ~/ros2_ws/src
+ros2 pkg create --build-type ament_python my_pkg
+
+다시 빌드
+cd ~/ros2_ws
+colcon build
+
+다시 적용
+source install/setup.bash
+
+패키지 목록에 뜨는지 확인
+ros2 pkg list | grep my_pkg
