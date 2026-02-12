@@ -1,0 +1,119 @@
+“내 워크스페이스에서 내가 만든 노드”를 하나 만들어서 같은 방식으로 동작시키기
+
+ROS 환경이 제대로 작동하는지 확인
+1. ROS 노드 실행 테스트
+터미널에
+ros2 run demo_nodes_cpp talker
+라고 입력해.
+정상이라면 “Publishing:” 같은 로그가 계속 출력된다.
+
+2. 새 터미널 하나 더 열기
+(중요: 새 터미널 열면 다시 환경 적용해야 함)
+source ~/ros2_ws/install/setup.bash
+그리고 입력
+ros2 run demo_nodes_cpp listener
+
+
+===============
+1. talker/listener 종료
+각 터미널에서 Ctrl + C
+
+2. 패키지 만들기
+터미널 1에서
+cd ~/ros2_ws/src
+ros2 pkg create my_first_pkg --build-type ament_python --dependencies rclpy std_msgs
+
+3. 퍼블리셔 파일 만들기
+터미널에서
+nano ~/ros2_ws/src/my_first_pkg/my_first_pkg/pub.py
+열고 아래 붙여넣기
+
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+
+class MyPublisher(Node):
+    def __init__(self):
+        super().__init__('my_publisher')
+        self.pub = self.create_publisher(String, 'my_topic', 10)
+        self.count = 0
+        self.timer = self.create_timer(0.5, self.timer_cb)
+
+    def timer_cb(self):
+        msg = String()
+        msg.data = f'my message: {self.count}'
+        self.pub.publish(msg)
+        self.get_logger().info(f'Publishing: {msg.data}')
+        self.count += 1
+
+def main():
+    rclpy.init()
+    node = MyPublisher()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+=============
+4. 서브스크라이버 파일 만들기
+nano ~/ros2_ws/src/my_first_pkg/my_first_pkg/sub.py
+열고 아래 붙여넣기
+
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+
+class MySubscriber(Node):
+    def __init__(self):
+        super().__init__('my_subscriber')
+        self.sub = self.create_subscription(String, 'my_topic', self.cb, 10)
+
+    def cb(self, msg):
+        self.get_logger().info(f'I heard: {msg.data}')
+
+def main():
+    rclpy.init()
+    node = MySubscriber()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+
+=======================
+
+
+5.  실행 등록 setup.py 수정
+nano ~/ros2_ws/src/my_first_pkg/setup.py
+열어서 entry_points 부분을 아래처럼 바꾸기
+
+entry_points={
+    'console_scripts': [
+        'pub = my_first_pkg.pub:main',
+        'sub = my_first_pkg.sub:main',
+    ],
+},
+
+=================
+
+6. 빌드하고 source
+cd ~/ros2_ws
+colcon build
+source ~/ros2_ws/install/setup.bash
+
+===================
+
+7. 실행 테스트
+터미널 1
+ros2 run my_first_pkg pub
+
+터미널 2 새로 열고
+source ~/ros2_ws/install/setup.bash
+ros2 run my_first_pkg sub
+
+여기까지 되면, 다음은 바로 “서보 각도를 토픽으로 보내고 아두이노가 받게 하기”로 연결하면 된다.
+
+
+
