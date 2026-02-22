@@ -1,4 +1,3 @@
-“내 워크스페이스에서 내가 만든 노드”를 하나 만들어서 같은 방식으로 동작시키기
 
 ROS 환경이 제대로 작동하는지 확인
 1. ROS 노드 실행 테스트
@@ -13,8 +12,14 @@ source ~/ros2_ws/install/setup.bash
 그리고 입력
 ros2 run demo_nodes_cpp listener
 
+결과 
+>>  talker가 /chatter 토픽으로 “Hello World: n”을 계속 publish하고,  
+listener가 같은 토픽을 subscribe해서 “I heard: [Hello World: n]”으로 받아 출력나오면 정상
 
-===============
+==============================
+“내 워크스페이스에서 내가 만든 노드”를 하나 만들어서 같은 방식으로 동작시키기
+==============================
+
 1. talker/listener 종료
 각 터미널에서 Ctrl + C
 
