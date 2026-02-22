@@ -199,4 +199,43 @@ source ~/ros2_ws/install/setup.bash
 7.실행 확인
 ros2 run my_first_pkg talker
 
+===========================
 
+1 먼저 지금 실행 중인 talker, listener는 각각 터미널에서 Ctrl+C로 멈춰줘
+
+2 패키지 폴더로 이동해서 talker 소스 파일을 열어
+
+cd ~/ros2_ws/src/my_first_pkg
+ls
+
+보통 파이썬 패키지면 이 안에 my_first_pkg 폴더가 있고 그 안에 pub.py 같은 파일이 있다. 
+지금 네 사진에서도 my_first_pkg/pub.py가 보였으니까 이 파일을 수정하면 된다.
+
+nano my_first_pkg/pub.py
+
+3 Publishing: 'Hello World: %d' 같은 부분이 있을 텐데, 그걸 예를 들어 이런 식으로 바꿔
+msg.data = 'Hello Soomi' 같은 한 줄을 찾아서 넣거나, 
+기존 msg.data 대입을 원하는 문장으로 바꾸면 된다. 예시는 이런 느낌이야.
+msg.data = 'hello from my_first_pkg'
+
+4 저장하고 나오기
+nano에서 저장은 Ctrl+O, 엔터, 종료는 Ctrl+X
+
+5 다시 빌드하고 source
+
+cd ~/ros2_ws
+colcon build
+source ~/ros2_ws/install/setup.bash
+
+6 이제 두 터미널에서 다시 실행
+첫 번째 터미널
+
+source ~/ros2_ws/install/setup.bash
+ros2 run my_first_pkg talker
+
+두 번째 터미널
+
+source ~/ros2_ws/install/setup.bash
+ros2 run my_first_pkg listener
+
+여기서 listener 출력이 네가 바꾼 문장으로 찍히면, ROS2 “노드 만들기→토픽으로 통신”의 핵심이 완전히 내 것이 된 거야.
