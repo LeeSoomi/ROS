@@ -120,5 +120,83 @@ ros2 run my_first_pkg sub
 
 여기까지 되면, 다음은 바로 “서보 각도를 토픽으로 보내고 아두이노가 받게 하기”로 연결하면 된다.
 
+========================
+확실하게 하려면, “빌드가 실패한 패키지(my_first_pkg)의 파일 3개를 표준 형태로 맞춰서” 다시 빌드하는 게 제일 빠르게 끝나.
+
+실패한 패키지가 정확히 my_first_pkg가 맞는지 먼저 확인
+
+1. 아래를 실행해서 폴더가 있는지 확인해줘.
+
+cd ~/ros2_ws/src
+ls
+ls my_first_pkg
+
+2. my_first_pkg 안에 setup.py, setup.cfg, package.xml가 있는지 확인
+cd ~/ros2_ws/src/my_first_pkg
+ls
+
+3. 아래 내용으로 setup.cfg를 그대로 덮어쓰기
+지금 파일에 다른 내용이 거의 없다면, 아예 표준 템플릿으로 바꾸는 게 안전해.
+cd ~/ros2_ws/src/my_first_pkg
+cat > setup.cfg << 'EOF'
+[develop]
+script_dir=$base/lib/my_first_pkg
+
+[install]
+install_scripts=$base/lib/my_first_pkg
+EOF
+
+4.setup.py도 표준 형태인지 확인하고, 아니라면 아래로 덮어쓰기
+여기서 패키지명 my_first_pkg가 정확히 일치해야 해.
+
+cat > setup.py << 'EOF'
+from setuptools import setup
+
+package_name = 'my_first_pkg'
+
+setup(
+    name=package_name,
+    version='0.0.0',
+    packages=[package_name],
+    data_files=[
+        ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
+        ('share/' + package_name, ['package.xml']),
+    ],
+    install_requires=['setuptools'],
+    zip_safe=True,
+    maintainer='na',
+    maintainer_email='na@todo.todo',
+    description='My first ROS 2 python package',
+    license='Apache-2.0',
+    tests_require=['pytest'],
+    entry_points={
+        'console_scripts': [
+            'talker = my_first_pkg.talker:main',
+            'listener = my_first_pkg.listener:main',
+        ],
+    },
+)
+EOF
+
+5. 패키지 구조가 맞는지 확인
+아래 파일/폴더가 꼭 있어야 해.
+ls -R
+
+정상이라면 대략 이런 게 보여야 해.
+my_first_pkg/ 폴더, 그 안에 __init__.py, talker.py, listener.py
+그리고 resource/my_first_pkg 파일, package.xml 파일
+
+만약 resource/my_first_pkg가 없다면 아래로 생성해줘.
+mkdir -p resource
+touch resource/my_first_pkg
+
+6. 워크스페이스에서 클린 빌드
+cd ~/ros2_ws
+rm -rf build install log
+colcon build
+source ~/ros2_ws/install/setup.bash
+
+7.실행 확인
+ros2 run my_first_pkg talker
 
 
