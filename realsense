@@ -126,3 +126,40 @@ realsense-viewer
 9. 만약 realsense-viewer가 안 열리면 장치 인식 확인
 
 rs-enumerate-devices
+
+=====================
+
+1. RealSense ROS 패키지 설치
+터미널에서 아래를 입력하세요.
+
+sudo apt update
+sudo apt install -y ros-humble-realsense2-*
+
+2. ROS에서 카메라 실행
+설치가 끝나면 새 터미널을 열고 입력합니다.
+
+source /opt/ros/humble/setup.bash
+ros2 launch realsense2_camera rs_launch.py
+
+3. 카메라 토픽 확인
+또 다른 새 터미널을 열고 입력합니다.
+
+source /opt/ros/humble/setup.bash
+ros2 topic list | grep camera
+
+정상이라면 이런 토픽들이 보일 가능성이 큽니다.
+
+/camera/color/image_raw
+/camera/depth/image_rect_raw
+/camera/depth/color/points
+
+4. 토픽 내용 확인
+예를 들어 컬러 영상 토픽이 실제로 나오는지 확인하려면
+
+source /opt/ros/humble/setup.bash
+ros2 topic hz /camera/color/image_raw
+
+깊이 토픽이 나오는지 보려면
+
+source /opt/ros/humble/setup.bash
+ros2 topic hz /camera/depth/image_rect_raw
