@@ -72,4 +72,57 @@ ros2 topic list | grep camera
 wrapper가 카메라 스트림과 point cloud를 ROS 토픽으로 내보내기 때문입니다
 
 
-8. 여기서부터의 권장 순서는 이렇습니다
+=============
+
+1. 잘못 저장된 RealSense 저장소 파일 삭제
+
+sudo rm /etc/apt/sources.list.d/librealsense.list
+
+2. https 관련 패키지 설치
+이 단계는 혹시 모를 문제를 막기 위한 준비입니다.
+
+sudo apt update
+sudo apt install -y apt-transport-https ca-certificates curl gnupg
+
+3. RealSense 키 파일 다시 준비
+이미 있어도 다시 해도 괜찮습니다.
+
+sudo mkdir -p /etc/apt/keyrings
+curl -sSf https://librealsense.intel.com/Debian/librealsense.pgp | sudo gpg --dearmor -o /etc/apt/keyrings/librealsense.pgp
+
+여기서 “파일이 이미 있다, 덮어쓸까”가 나오면 y 입력하면 됩니다.
+
+4. RealSense 저장소를 다시 정확하게 등록
+여기서 가장 중요합니다.
+반드시 https:// 앞에 \를 넣지 말아야 합니다.
+
+echo "deb [signed-by=/etc/apt/keyrings/librealsense.pgp] https://librealsense.intel.com/Debian/apt-repo $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/librealsense.list
+
+5. 저장소가 제대로 들어갔는지 확인
+
+cat /etc/apt/sources.list.d/librealsense.list
+
+정상이라면 결과가 이렇게 보여야 합니다.
+
+deb [signed-by=/etc/apt/keyrings/librealsense.pgp] https://librealsense.intel.com/Debian/apt-repo jammy main
+
+여기서 \https가 보이면 다시 잘못된 것이고, https://로 보여야 정상입니다.
+
+6. 패키지 목록 갱신
+
+sudo apt update
+
+이 단계에서 빨간 오류가 없이 끝나야 합니다.
+
+7. RealSense 패키지 설치
+
+sudo apt install -y librealsense2-dkms librealsense2-utils librealsense2-dev
+
+8.설치 확인
+설치가 끝나면 카메라를 연결하고 아래를 실행합니다.
+
+realsense-viewer
+
+9. 만약 realsense-viewer가 안 열리면 장치 인식 확인
+
+rs-enumerate-devices
