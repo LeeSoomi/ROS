@@ -12,9 +12,9 @@
 
 2. 먼저 기본 패키지와 RealSense SDK를 설치합니다.
   터미널에 아래 순서대로 입력(이 의존성들은 librealsense 공식 설치 문서의 기본 준비 항목)
-    sudo apt update
-    sudo apt upgrade -y
-    sudo apt install -y \libssl-dev libusb-1.0-0-dev libudev-dev pkg-config libgtk-3-dev \git cmake build-essential libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev
+sudo apt update
+sudo apt upgrade -y
+sudo apt install -y \libssl-dev libusb-1.0-0-dev libudev-dev pkg-config libgtk-3-dev \git cmake build-essential libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev
 
 3. RealSense 저장소를 추가하고 SDK와 Viewer를 설치합니다.
   우분투 PC 환경에서는 공식 Debian 저장소를 쓰는 방법이 가장 간단합니다. 
@@ -22,17 +22,18 @@
   realsense-viewer는 librealsense2-utils에 포함됩니다.
   아래 그대로 진행
 
-    sudo mkdir -p /etc/apt/keyrings
-    curl -sSf https://librealsense.intel.com/Debian/librealsense.pgp | \ sudo gpg --dearmor -o /etc/apt/keyrings/librealsense.pgp
+sudo mkdir -p /etc/apt/keyrings
+curl -sSf https://librealsense.intel.com/Debian/librealsense.pgp | \ 
+sudo gpg --dearmor -o /etc/apt/keyrings/librealsense.pgp
     
-    echo "deb [signed-by=/etc/apt/keyrings/librealsense.pgp] \https://librealsense.intel.com/Debian/apt-repo $(lsb_release -cs) main" | \
-    sudo tee /etc/apt/sources.list.d/librealsense.list
+echo "deb [signed-by=/etc/apt/keyrings/librealsense.pgp] \https://librealsense.intel.com/Debian/apt-repo $(lsb_release -cs) main" | \
+sudo tee /etc/apt/sources.list.d/librealsense.list
     
-    sudo apt update
-    sudo apt install -y librealsense2-dkms librealsense2-utils librealsense2-dev
+sudo apt update
+sudo apt install -y librealsense2-dkms librealsense2-utils librealsense2-dev
 
   설치가 끝나면 Viewer가 있는지 확인
-    realsense-viewer
+realsense-viewer
 
 4. 카메라를 먼저 Viewer에서 확인
   카메라를 USB 3 포트에 연결한 뒤 
@@ -40,32 +41,32 @@
   공식 이슈들에서도 “viewer에서 인식되는지”가 가장 기본 확인 단계로 쓰이고 있습니다
 
   추가 확인용으로는 아래도 좋습니다.
-    rs-enumerate-devices
+rs-enumerate-devices
 
 5. 이제 ROS wrapper를 설치합니다.
   공식 realsense-ros README에는 Humble에서 Debian 패키지 설치로 
   sudo apt install ros-humble-realsense2-*를 안내하고 있습니다.
 
   아래를 입력하세요.
-    sudo apt update
-    sudo apt install -y ros-humble-realsense2-*
+sudo apt update
+sudo apt install -y ros-humble-realsense2-*
 
 6. ROS에서 카메라를 실행합니다.
   새 터미널에서 아래처럼 실행하세요.
   
-    source /opt/ros/humble/setup.bash
-    ros2 launch realsense2_camera rs_launch.py
+source /opt/ros/humble/setup.bash
+ros2 launch realsense2_camera rs_launch.py
 
   point cloud까지 보고 싶으면 아래와 같이 실행하면 됩니다.
-    source /opt/ros/humble/setup.bash
-    ros2 launch realsense2_camera rs_launch.py enable_pointcloud:=true
+source /opt/ros/humble/setup.bash
+ros2 launch realsense2_camera rs_launch.py enable_pointcloud:=true
 
  >>>  rs_launch.py는 공식 wrapper 저장소에 있는 기본 launch 파일
 
 7. ROS 토픽이 뜨는지 확인합니다.
   카메라 런치 후 새 터미널에서 확인하세요.
-    source /opt/ros/humble/setup.bash
-    ros2 topic list | grep camera
+source /opt/ros/humble/setup.bash
+ros2 topic list | grep camera
 >>> 보통 
 /camera/color/image_raw, /camera/depth/image_rect_raw, /camera/depth/color/points 같은 토픽이 보이면 정상입니다. 
 wrapper가 카메라 스트림과 point cloud를 ROS 토픽으로 내보내기 때문입니다
