@@ -14,9 +14,7 @@
   터미널에 아래 순서대로 입력(이 의존성들은 librealsense 공식 설치 문서의 기본 준비 항목)
     sudo apt update
     sudo apt upgrade -y
-    sudo apt install -y \
-      libssl-dev libusb-1.0-0-dev libudev-dev pkg-config libgtk-3-dev \
-      git cmake build-essential libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev
+    sudo apt install -y \libssl-dev libusb-1.0-0-dev libudev-dev pkg-config libgtk-3-dev \git cmake build-essential libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev
 
 3. RealSense 저장소를 추가하고 SDK와 Viewer를 설치합니다.
   우분투 PC 환경에서는 공식 Debian 저장소를 쓰는 방법이 가장 간단합니다. 
