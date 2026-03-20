@@ -185,7 +185,27 @@ ros2 launch realsense2_camera rs_launch.py
 
   이 터미널은 켜둔 상태로 둡니다.
   그 다음 새 터미널을 엽니다.
-  터미널 2에서 실행
+ ------------------
+
+rqt_image_view 설치
+
+sudo apt update
+sudo apt install -y ros-humble-rqt-image-view
+
+설치 후 다시 실행
+source /opt/ros/humble/setup.bash
+rqt_image_view
+
+창이 열리면 상단 드롭다운에서 이 토픽 선택
+/camera/camera/color/image_raw
+
+깊이 영상도 보고 싶으면 나중에 이것도 선택해보면 됩니다.
+/camera/camera/depth/image_rect_raw
+
+------------------
+
+
+터미널 2에서 실행
 
 source /opt/ros/humble/setup.bash
 rqt_image_view
