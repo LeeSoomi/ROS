@@ -1,241 +1,49 @@
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
 
-ROS 환경이 제대로 작동하는지 확인
-1. ROS 노드 실행 테스트
-터미널에
-ros2 run demo_nodes_cpp talker
-라고 입력해.
-정상이라면 “Publishing:” 같은 로그가 계속 출력된다.
+// PCA9685 보드 객체 생성
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
-2. 새 터미널 하나 더 열기
-(중요: 새 터미널 열면 다시 환경 적용해야 함)
-source ~/ros2_ws/install/setup.bash
-그리고 입력
-ros2 run demo_nodes_cpp listener
+// 사용하는 서보모터 스펙에 맞춘 PWM 펄스값 (필요시 미세조정)
+#define SERVOMIN  150 // 0도일 때
+#define SERVOMAX  600 // 180도일 때
 
-결과 
->>  talker가 /chatter 토픽으로 “Hello World: n”을 계속 publish하고,  
-listener가 같은 토픽을 subscribe해서 “I heard: [Hello World: n]”으로 받아 출력나오면 정상
+void setup() {
+  Serial.begin(115200);
+  
+  pwm.begin();
+  pwm.setPWMFreq(50); // 아날로그 서보모터 표준 주파수 50Hz
+  
+  Serial.println("Robot Arm Ready! Waiting for ROS commands...");
+}
 
-==============================
-“내 워크스페이스에서 내가 만든 노드”를 하나 만들어서 같은 방식으로 동작시키기
-==============================
+void loop() {
+  // ROS로부터 시리얼 통신 데이터가 들어오면
+  if (Serial.available() > 0) {
+    String data = Serial.readStringUntil('\n');
+    
+    // ':' 기준으로 데이터 쪼개기
+    int separatorIndex = data.indexOf(':');
+    
+    if (separatorIndex > 0) {
+      int channel = data.substring(0, separatorIndex).toInt();
+      int angle = data.substring(separatorIndex + 1).toInt();
 
-1. talker/listener 종료
-각 터미널에서 Ctrl + C
+      // 안전을 위해 각도를 0~180도로 제한
+      angle = constrain(angle, 0, 180);
 
-2. 패키지 만들기
-터미널 1에서
-cd ~/ros2_ws/src
-ros2 pkg create my_first_pkg --build-type ament_python --dependencies rclpy std_msgs
+      // 각도(0~180)를 PCA9685용 펄스 값(150~600)으로 변환
+      int pulse = map(angle, 0, 180, SERVOMIN, SERVOMAX);
 
-3. 퍼블리셔 파일 만들기
-터미널에서
-nano ~/ros2_ws/src/my_first_pkg/my_first_pkg/pub.py
-열고 아래 붙여넣기
+      // 모터 구동!
+      pwm.setPWM(channel, 0, pulse);
 
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import String
-
-class MyPublisher(Node):
-    def __init__(self):
-        super().__init__('my_publisher')
-        self.pub = self.create_publisher(String, 'my_topic', 10)
-        self.count = 0
-        self.timer = self.create_timer(0.5, self.timer_cb)
-
-    def timer_cb(self):
-        msg = String()
-        msg.data = f'my message: {self.count}'
-        self.pub.publish(msg)
-        self.get_logger().info(f'Publishing: {msg.data}')
-        self.count += 1
-
-def main():
-    rclpy.init()
-    node = MyPublisher()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
-
-if __name__ == '__main__':
-    main()
-=============
-4. 서브스크라이버 파일 만들기
-nano ~/ros2_ws/src/my_first_pkg/my_first_pkg/sub.py
-열고 아래 붙여넣기
-
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import String
-
-class MySubscriber(Node):
-    def __init__(self):
-        super().__init__('my_subscriber')
-        self.sub = self.create_subscription(String, 'my_topic', self.cb, 10)
-
-    def cb(self, msg):
-        self.get_logger().info(f'I heard: {msg.data}')
-
-def main():
-    rclpy.init()
-    node = MySubscriber()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
-
-if __name__ == '__main__':
-    main()
-
-=======================
-
-
-5.  실행 등록 setup.py 수정
-nano ~/ros2_ws/src/my_first_pkg/setup.py
-열어서 entry_points 부분을 아래처럼 바꾸기
-
-entry_points={
-    'console_scripts': [
-        'pub = my_first_pkg.pub:main',
-        'sub = my_first_pkg.sub:main',
-    ],
-},
-
-=================
-
-6. 빌드하고 source
-cd ~/ros2_ws
-colcon build
-source ~/ros2_ws/install/setup.bash
-
-===================
-
-7. 실행 테스트
-터미널 1
-ros2 run my_first_pkg pub
-
-터미널 2 새로 열고
-source ~/ros2_ws/install/setup.bash
-ros2 run my_first_pkg sub
-
-여기까지 되면, 다음은 바로 “서보 각도를 토픽으로 보내고 아두이노가 받게 하기”로 연결하면 된다.
-
-========================
-확실하게 하려면, “빌드가 실패한 패키지(my_first_pkg)의 파일 3개를 표준 형태로 맞춰서” 다시 빌드하는 게 제일 빠르게 끝나.
-
-실패한 패키지가 정확히 my_first_pkg가 맞는지 먼저 확인
-
-1. 아래를 실행해서 폴더가 있는지 확인해줘.
-
-cd ~/ros2_ws/src
-ls
-ls my_first_pkg
-
-2. my_first_pkg 안에 setup.py, setup.cfg, package.xml가 있는지 확인
-cd ~/ros2_ws/src/my_first_pkg
-ls
-
-3. 아래 내용으로 setup.cfg를 그대로 덮어쓰기
-지금 파일에 다른 내용이 거의 없다면, 아예 표준 템플릿으로 바꾸는 게 안전해.
-cd ~/ros2_ws/src/my_first_pkg
-cat > setup.cfg << 'EOF'
-[develop]
-script_dir=$base/lib/my_first_pkg
-
-[install]
-install_scripts=$base/lib/my_first_pkg
-EOF
-
-4.setup.py도 표준 형태인지 확인하고, 아니라면 아래로 덮어쓰기
-여기서 패키지명 my_first_pkg가 정확히 일치해야 해.
-
-cat > setup.py << 'EOF'
-from setuptools import setup
-
-package_name = 'my_first_pkg'
-
-setup(
-    name=package_name,
-    version='0.0.0',
-    packages=[package_name],
-    data_files=[
-        ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml']),
-    ],
-    install_requires=['setuptools'],
-    zip_safe=True,
-    maintainer='na',
-    maintainer_email='na@todo.todo',
-    description='My first ROS 2 python package',
-    license='Apache-2.0',
-    tests_require=['pytest'],
-    entry_points={
-        'console_scripts': [
-            'talker = my_first_pkg.talker:main',
-            'listener = my_first_pkg.listener:main',
-        ],
-    },
-)
-EOF
-
-5. 패키지 구조가 맞는지 확인
-아래 파일/폴더가 꼭 있어야 해.
-ls -R
-
-정상이라면 대략 이런 게 보여야 해.
-my_first_pkg/ 폴더, 그 안에 __init__.py, talker.py, listener.py
-그리고 resource/my_first_pkg 파일, package.xml 파일
-
-만약 resource/my_first_pkg가 없다면 아래로 생성해줘.
-mkdir -p resource
-touch resource/my_first_pkg
-
-6. 워크스페이스에서 클린 빌드
-cd ~/ros2_ws
-rm -rf build install log
-colcon build
-source ~/ros2_ws/install/setup.bash
-
-7.실행 확인
-ros2 run my_first_pkg talker
-
-===========================
-
-1 먼저 지금 실행 중인 talker, listener는 각각 터미널에서 Ctrl+C로 멈춰줘
-
-2 패키지 폴더로 이동해서 talker 소스 파일을 열어
-
-cd ~/ros2_ws/src/my_first_pkg
-ls
-
-보통 파이썬 패키지면 이 안에 my_first_pkg 폴더가 있고 그 안에 pub.py 같은 파일이 있다. 
-지금 네 사진에서도 my_first_pkg/pub.py가 보였으니까 이 파일을 수정하면 된다.
-
-nano my_first_pkg/pub.py
-
-3 Publishing: 'Hello World: %d' 같은 부분이 있을 텐데, 그걸 예를 들어 이런 식으로 바꿔
-msg.data = 'Hello Soomi' 같은 한 줄을 찾아서 넣거나, 
-기존 msg.data 대입을 원하는 문장으로 바꾸면 된다. 예시는 이런 느낌이야.
-msg.data = 'hello from my_first_pkg'
-
-4 저장하고 나오기
-nano에서 저장은 Ctrl+O, 엔터, 종료는 Ctrl+X
-
-5 다시 빌드하고 source
-
-cd ~/ros2_ws
-colcon build
-source ~/ros2_ws/install/setup.bash
-
-6 이제 두 터미널에서 다시 실행
-첫 번째 터미널
-
-source ~/ros2_ws/install/setup.bash
-ros2 run my_first_pkg talker
-
-두 번째 터미널
-
-source ~/ros2_ws/install/setup.bash
-ros2 run my_first_pkg listener
-
-여기서 listener 출력이 네가 바꾼 문장으로 찍히면, ROS2 “노드 만들기→토픽으로 통신”의 핵심이 완전히 내 것이 된 거야.
+      // ROS 쪽으로 잘 움직였다고 에코(Echo) 전송
+      Serial.print("Moved Motor [");
+      Serial.print(channel);
+      Serial.print("] to ");
+      Serial.print(angle);
+      Serial.println(" degrees");
+    }
+  }
+} 만들기→토픽으로 통신”의 핵심이 완전히 내 것이 된 거야.
