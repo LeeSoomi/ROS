@@ -1,100 +1,57 @@
-// 우분투 노트북에서 RealSense D435f를 쓰기 위한 설치 및 로봇팔 제어 단계
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+import serial
 
-1. 사전 준비 (기본 패키지 및 의존성 설치)
-터미널에 아래 명령어를 순서대로 입력하여 기본 환경을 세팅합니다.
-sudo apt update
-sudo apt upgrade -y
-sudo apt install -y libssl-dev libusb-1.0-0-dev libudev-dev pkg-config libgtk-3-dev git cmake build-essential libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev apt-transport-https ca-certificates curl gnupg
+class ArmController(Node):
+    def __init__(self):
+        super().__init__('arm_controller_node')
+        
+        # 아두이노 포트 세팅
+        self.port = '/dev/ttyACM0'
+        self.baudrate = 115200
+        
+        try:
+            self.ser = serial.Serial(self.port, self.baudrate, timeout=1)
+            self.get_logger().info('✅ 아두이노 로봇팔 연결 성공!')
+        except Exception as e:
+            self.get_logger().error(f'❌ 아두이노 연결 실패: {e}')
+            self.ser = None
 
-2. RealSense SDK 및 Viewer 설치
-공식 Debian 저장소를 추가하고 필요한 패키지를 설치합니다.
-sudo mkdir -p /etc/apt/keyrings
-curl -sSf https://librealsense.intel.com/Debian/librealsense.pgp | sudo gpg --dearmor -o /etc/apt/keyrings/librealsense.pgp
-echo "deb [signed-by=/etc/apt/keyrings/librealsense.pgp] https://librealsense.intel.com/Debian/apt-repo $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/librealsense.list
+        # Color Tracker가 퍼블리시하는 좌표 구독
+        self.subscription = self.create_subscription(
+            String, '/target_xy', self.target_callback, 10)
 
-sudo apt update
-sudo apt install -y librealsense2-dkms librealsense2-utils librealsense2-dev
+    def target_callback(self, msg):
+        if not self.ser or not self.ser.is_open:
+            return
+        
+        try:
+            # 전달받은 "X,Y" 텍스트를 분리
+            coords = msg.data.split(',')
+            cx = int(coords[0])
+            
+            # X 좌표(화면너비 0~640)를 서보모터 각도(0~180도)로 비례 변환
+            # 물체가 화면 오른쪽에 있으면 모터 각도가 커지고, 왼쪽에 있으면 작아짐
+            angle = int((cx / 640.0) * 180.0)
+            
+            # 0번 모터 채널에 각도 전송 ("채널:각도\n" 포맷)
+            command = f"0:{angle}\n"
+            self.ser.write(command.encode('utf-8'))
+            self.get_logger().info(f'목표 X좌표: {cx} ➔ 모터 전송 명령: {command.strip()}')
+            
+        except Exception as e:
+            self.get_logger().error(f'데이터 처리 오류: {e}')
 
-3. 하드웨어 연결 및 Viewer 확인
-카메라를 USB 3.0 포트에 연결한 뒤, 터미널에 아래 명령어를 입력합니다.
-realsense-viewer
-(창이 열리고 컬러/깊이 영상이 정상적으로 뜨면 SDK 설치 완료입니다.)
+def main():
+    rclpy.init()
+    node = ArmController()
+    rclpy.spin(node)
+    
+    if node.ser and node.ser.is_open:
+        node.ser.close()
+    node.destroy_node()
+    rclpy.shutdown()
 
-4. ROS 2 Wrapper 설치
-ROS Humble 환경에서 리얼센스를 사용할 수 있도록 패키지를 설치합니다.
-sudo apt update
-sudo apt install -y ros-humble-realsense2-*
-
-====================================
-본격적인 프로젝트 4단계 흐름
-====================================
-
-1단계. ROS에서 영상 직접 보기
-이 단계의 목적은 "카메라 영상이 ROS 안에서 실제로 들어오고 있구나"를 눈으로 확인하는 것입니다.
-
-[터미널 1: 카메라 노드 실행]
-source /opt/ros/humble/setup.bash
-ros2 launch realsense2_camera rs_launch.py
-(이 터미널은 켜둔 상태로 둡니다.)
-
-[터미널 2: 시각화 도구 설치 및 실행]
-sudo apt update
-sudo apt install -y ros-humble-rqt-image-view
-
-source /opt/ros/humble/setup.bash
-ros2 run rqt_image_view rqt_image_view
-
-창이 열리면 상단 드롭다운 메뉴에서 아래 토픽을 선택합니다.
-- 컬러 영상: /camera/camera/color/image_raw
-- 깊이 영상: /camera/camera/depth/image_rect_raw
-
-화면이 잘 뜨면 1단계 완료입니다!
-(구조: 카메라 → ROS 노드 → image_raw 토픽 → rqt_image_view 화면 출력)
-
------
-
-2단계. 영상 데이터 활용해서 좌표 계산
-이 단계 목적은 영상 자체를 보는 게 아니라, 영상 속 물체 위치를 숫자로 바꾸는 것입니다.
-
-가장 쉬운 방법은 특정 색상(예: 빨간색, 파란색) 물체 하나를 정해서 중심 좌표를 찾는 것입니다. 이 역할을 할 노드를 `color_tracker_node`라고 부르겠습니다.
-
-흐름은 이렇게 됩니다.
-컬러 영상 받기 → OpenCV로 색상 추출 → 물체 중심 좌표 계산 → 좌표를 ROS 토픽으로 Publish
-
-(구조: 카메라 → /camera/camera/color/image_raw → color_tracker_node → /target_xy)
-여기서 `/target_xy`는 나중에 로봇팔 제어 입력값이 됩니다.
-
------
-
-3단계. 아두이노와 연결
-이 단계 목적은 ROS가 계산한 좌표나 각도 명령을 아두이노로 보내는 것입니다.
-ROS는 직접 서보모터를 움직이지 않고 명령만 보내며, 실제 PWM 제어는 아두이노와 PCA9685가 담당합니다.
-
-처음부터 서보 6개를 다 제어하지 말고, "ROS에서 값 보내기 → 아두이노가 받기" 통신부터 확인합니다.
-
-예를 들어 ROS가 시리얼로 이런 문자열을 보냅니다.
-"90\n" (또는 "0:90\n")
-
-그러면 아두이노가 그 값을 읽고 "servo angle = 90"으로 해석하는 구조입니다. 이 통신이 확인되면 PCA9685 채널 0에 값을 넣어 모터 1개를 움직이고, 점차 6개로 확장합니다.
-
------
-
-4단계. 로봇팔 제어 (최종 단계)
-이제 전체 구조가 완성됩니다. 
-카메라 → 물체 위치 계산 → 목표 좌표 생성 → ROS 제어 노드 → 아두이노로 각도 전송 → PCA9685 → 서보 6개 → 로봇팔 움직임
-
-통상적으로 이 단계에서는 ROS 안에 노드를 기능별로 나눕니다.
-- tracker_node: 물체 2D/3D 좌표 Publish
-- arm_control_node: 목표 좌표를 로봇팔의 각 관절 각도로 변환 (역기구학, IK 적용)
-- serial_sender_node: 변환된 각도를 아두이노로 전송
-
-====================================
-오늘 당장 해야 할 1단계 최종 요약
-====================================
-터미널 1:
-source /opt/ros/humble/setup.bash
-ros2 launch realsense2_camera rs_launch.py
-
-터미널 2 (새 탭):
-source /opt/ros/humble/setup.bash
-ros2 run rqt_image_view rqt_image_view
+if __name__ == '__main__':
+    main()
