@@ -1,177 +1,97 @@
-화면처럼 22.04.5 LTS 업그레이드 알림이 떠 있는 상태라면 그 흐름부터 이어가면 됩니다.
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Image
+from geometry_msgs.msg import Point
+from cv_bridge import CvBridge
+import cv2
+import numpy as np
 
-1. 업데이트부터 마무리하기
-지금 창에서 Yes, Upgrade Now를 누르고 진행하세요. 진행 중에는 노트북 전원 연결을 해두고, 중간에 끄지 않는 게 중요합니다. 
-업데이트가 끝나면 재부팅을 요구할 수 있는데, 재부팅까지 완료하세요.
+class ColorTrackerNode(Node):
+    def __init__(self):
+        super().__init__('color_tracker_node')
+        
+        # 1. ROS 이미지를 OpenCV 이미지로 변환해 주는 브릿지 초기화
+        self.bridge = CvBridge()
+        
+        # 2. Subscriber: 카메라 토픽 구독
+        self.subscription = self.create_subscription(
+            Image,
+            '/camera/camera/color/image_raw',  # 환경에 따라 '/camera/color/image_raw'일 수 있음
+            self.image_callback,
+            10)
+            
+        # 3. Publisher: 계산된 x, y 좌표를 /target_xy 토픽으로 발행
+        self.publisher_ = self.create_publisher(Point, '/target_xy', 10)
+        
+        self.get_logger().info('Color Tracker Node가 성공적으로 시작되었습니다.')
 
-2. 업데이트가 끝났는지 확인하기
-재부팅 후 바탕화면이 뜨면, 키보드에서 Ctrl + Alt + T를 누르면 터미널이 열립니다. 터미널에 아래를 입력하고 엔터를 누르세요.
+    def image_callback(self, msg):
+        try:
+            # ROS Image 메시지를 OpenCV에서 처리할 수 있는 BGR 포맷으로 변환
+            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        except Exception as e:
+            self.get_logger().error(f'이미지 변환 실패: {e}')
+            return
 
-lsb_release -a
-출력에 Ubuntu 22.04.5 LTS처럼 22.04.x가 나오면 정상입니다.
+        # BGR 이미지를 색상 추출이 쉬운 HSV 색상 공간으로 변환
+        hsv = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
 
-3. 기본 패키지 최신화하기
-터미널에서 아래 두 줄을 순서대로 입력합니다. 중간에 비밀번호를 묻으면 우분투 로그인 비밀번호를 입력하면 됩니다. 
-입력할 때 화면에 글자가 안 보이는 게 정상입니다.
-sudo apt update
-sudo apt upgrade -y
+        # 4. 추출할 색상(파란색) 범위 설정 (필요시 이 수치를 변경해 다른 색상 추적 가능)
+        # HSV 기준 파란색 범위: H(100~140), S(150~255), V(0~255)
+        lower_blue = np.array([100, 150, 0])
+        upper_blue = np.array([140, 255, 255])
 
-4. ROS2 Humble 설치 준비하기
-ROS는 우분투에 “공식 저장소 키와 패키지 목록”을 등록한 뒤 설치합니다. 
-아래 명령을 순서대로 그대로 입력하세요.
+        # 범위에 해당하는 색상만 흰색으로 남기는 마스크(Mask) 생성
+        mask = cv2.inRange(hsv, lower_blue, upper_blue)
 
-sudo apt install -y software-properties-common curl gnupg
+        # 노이즈(자잘한 점) 제거를 위한 모폴로지 연산
+        mask = cv2.erode(mask, None, iterations=2)
+        mask = cv2.dilate(mask, None, iterations=2)
 
-sudo add-apt-repository universe -y
+        # 5. 윤곽선(Contours) 찾기
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+        if len(contours) > 0:
+            # 가장 면적이 큰 윤곽선(물체) 하나만 선택
+            c = max(contours, key=cv2.contourArea)
+            
+            # 모멘트(Moments)를 이용해 물체의 중심점(cx, cy) 계산
+            M = cv2.moments(c)
+            if M["m00"] > 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
 
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+                # 6. 중심 좌표를 Point 메시지로 담아 Publish
+                target_msg = Point()
+                target_msg.x = float(cx)
+                target_msg.y = float(cy)
+                target_msg.z = 0.0  # 2D 평면 좌표이므로 z는 0으로 둡니다
+                self.publisher_.publish(target_msg)
 
-sudo apt update
+                # 로그 출력 (터미널에서 좌표 확인용)
+                self.get_logger().info(f'목표물 좌표 발행 중 -> X: {cx}, Y: {cy}')
 
+                # 7. 영상에 시각적으로 중심점 그리기 (화면 확인용)
+                cv2.circle(cv_image, (cx, cy), 5, (0, 0, 255), -1)  # 빨간색 원
+                cv2.putText(cv_image, f"Target ({cx}, {cy})", (cx - 40, cy - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
-5. ROS2 Humble 설치하기
-가장 무난한 설치는 데스크톱 버전입니다. RViz 같은 도구까지 같이 깔립니다.
-sudo apt install -y ros-humble-desktop
+        # 카메라 원본(시각 효과 추가됨)과 마스크 영상을 화면에 띄움
+        cv2.imshow('Camera Vision', cv_image)
+        cv2.imshow('Color Mask', mask)
+        cv2.waitKey(1) # OpenCV 화면을 갱신하기 위한 필수 코드
 
-6. ROS 환경 설정하기
-설치 후 ROS 명령이 터미널에서 항상 인식되도록 설정합니다.
-echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
-source ~/.bashrc
+def main(args=None):
+    rclpy.init(args=args)
+    node = ColorTrackerNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Ctrl+C 입력 감지: 노드를 종료합니다.')
+    finally:
+        node.destroy_node()
+        cv2.destroyAllWindows()
+        rclpy.shutdown()
 
-7. 설치가 됐는지 간단 테스트하기
-터미널을 두 개 열어서 아래처럼 실행해보세요.
-
-첫 번째 터미널
-ros2 run demo_nodes_cpp talker
-
-두 번째 터미널
-ros2 run demo_nodes_cpp listener
-
-두 번째 터미널에서 “I heard …” 같은 메시지가 계속 나오면 ROS2 설치가 정상입니다.
-
-8. 다음 단계로 넘어가기 전에 꼭 해둘 것
-지금 단계에서는 로봇팔 연결을 바로 하지 말고, ROS 워크스페이스를 만들고 패키지 구조를 잡는 게 먼저입니다. 
-아래 명령으로 작업 폴더를 만듭니다.
-mkdir -p ~/ros2_ws/src
-cd ~/ros2_ws
-colcon build
-source install/setup.bash
-
-===================
-1 dpkg 설치
-sudo apt update
-sudo apt install -y dpkg
-
-2 dpkg가 잡히는지 확인
-which dpkg
-dpkg --version
-
-3 그다음에 colcon 확인으로 다시 돌아가기
-which colcon
-colcon --version
-
-4 만약 3에서 colcon이 아직도 안 나오면, colcon 실행 파일 들어있는 패키지를 추가 설치
-sudo apt install -y python3-colcon-core python3-colcon-ros python3-colcon-common-extensions
-which colcon
-colcon --version
-
-==============
-
-1 colcon이 실제로 생겼는지 확인
-which colcon
-colcon --version
-
-2 만약 위에서 아무것도 안 나오면 PATH 문제일 수 있으니 패키지 안의 파일 위치를 확인
-dpkg -L python3-colcon-common-extensions | head -n 30
-dpkg -L python3-colcon-colcon-core | grep /bin/ | head
-
-3 그래도 colcon이 안 잡히면, colcon 실행파일이 들어있는 패키지를 한 번 더 설치
-sudo apt install -y python3-colcon-core python3-colcon-ros
-
-4 다시 확인
-which colcon
-colcon --version
-
-
-===
-워크스페이스 환경 적용
-터미널에서 ~/ros2_ws 위치에서 아래를 실행해
-source install/setup.bash
-
-적용이 됐는지 확인
-echo $COLCON_PREFIX_PATH
-여기 출력에 .../ros2_ws/install 같은 경로가 포함되면 성공이야.
-
-그런데도 ros2 pkg list에 내가 만든 패키지가 안 보인다면
-그건 src 안에 빌드할 패키지가 아직 없어서 그래. 사진에서도 src 디렉토리 자체는 있지만, 안에 패키지 폴더가 있다는 증거는 아직 없거든.
-확인은 이렇게 해
-ls -l src
-
-src가 비어있거나 패키지가 없다면, 패키지 하나 만든 뒤 빌드
-cd ~/ros2_ws/src
-ros2 pkg create --build-type ament_python my_pkg
-cd ~/ros2_ws
-colcon build
-source install/setup.bash
-ros2 pkg list | grep my_pkg
-
-여기까지 하면 “source는 되는데 뭘 실행할 게 없다” 문제가 끝나고, 내 워크스페이스 패키지가 잡히는 상태가 돼.
-
-여기까지 되면 “ROS로 프로그램을 만들 준비”가 끝난 겁니다.
-============
-
-
-이 다음에 보통 바로 확인하는 건 두 가지야.
-
-지금 워크스페이스가 ROS에서 우선으로 잡히는지
-echo $AMENT_PREFIX_PATH
-여기에도 ~/ros2_ws/install 같은 경로가 앞쪽에 나오면 좋아.
-
-패키지 인식되는지
-ros2 pkg list | grep -i <패키지이름>
-아직 패키지를 안 만들었다면, 먼저 예제 패키지 만들고 빌드하면 돼.
-
-패키지 하나 만들어서 “내가 만든 노드”까지 실행해보고 싶으면, 지금 폴더가 ~/ros2_ws니까 아래 순서로 가면 돼.
-
-패키지 만들기
-cd ~/ros2_ws/src
-ros2 pkg create --build-type ament_python my_pkg
-
-다시 빌드
-cd ~/ros2_ws
-colcon build
-
-다시 적용
-source install/setup.bash
-
-패키지 목록에 뜨는지 확인
-ros2 pkg list | grep my_pkg
-=====================
-
-ROS 환경이 제대로 작동하는지 확인하는 단계로 넘어가면 돼. 아래 순서 그대로 따라 하면 된다.
-
-ROS 노드 실행 테스트
-터미널에
-ros2 run demo_nodes_cpp talker
-라고 입력해.
-정상이라면 “Publishing:” 같은 로그가 계속 출력된다.
-
-새 터미널 하나 더 열기
-(중요: 새 터미널 열면 다시 환경 적용해야 함)
-source ~/ros2_ws/install/setup.bash
-
-그리고 입력
-ros2 run demo_nodes_cpp listener
-
-그러면 talker가 보내는 메시지를 listener가 받아서 출력한다.
-
-이게 성공하면 의미
-ROS 통신 시스템 DDS
-환경 변수
-워크스페이스 overlay
-노드 실행
-
-이 네 가지가 전부 정상이라는 뜻
-
+if __name__ == '__main__':
+    main()
