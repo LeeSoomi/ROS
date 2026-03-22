@@ -4,46 +4,87 @@
 // PCA9685 보드 객체 생성
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
-// 사용하는 서보모터 스펙에 맞춘 PWM 펄스값 (필요시 미세조정)
-#define SERVOMIN  150 // 0도일 때
-#define SERVOMAX  600 // 180도일 때
+// 서보모터 PWM 펄스 범위 (모터 스펙에 따라 조정)
+#define SERVOMIN      150   // 0도
+#define SERVOMAX      600   // 180도
+#define NUM_CHANNELS  16    // PCA9685 최대 채널 수
+
+// 각 채널의 현재 각도 저장 (초기값 90도 = 중앙)
+int currentAngles[NUM_CHANNELS];
+
+// 각도를 PWM 펄스값으로 변환하는 함수
+int angleToPulse(int angle) {
+  angle = constrain(angle, 0, 180);
+  return map(angle, 0, 180, SERVOMIN, SERVOMAX);
+}
+
+// 특정 채널의 서보를 목표 각도로 부드럽게 이동 (스윕)
+void moveServoSmooth(int channel, int targetAngle, int stepDelay = 10) {
+  targetAngle = constrain(targetAngle, 0, 180);
+  int current = currentAngles[channel];
+  int step = (targetAngle > current) ? 1 : -1;
+
+  while (current != targetAngle) {
+    current += step;
+    pwm.setPWM(channel, 0, angleToPulse(current));
+    delay(stepDelay);
+  }
+  currentAngles[channel] = targetAngle;
+}
 
 void setup() {
   Serial.begin(115200);
-  
+
   pwm.begin();
-  pwm.setPWMFreq(50); // 아날로그 서보모터 표준 주파수 50Hz
-  
-  Serial.println("Robot Arm Ready! Waiting for ROS commands...");
+  pwm.setPWMFreq(50);  // 아날로그 서보 표준 50Hz
+
+  // 모든 채널 초기 위치(90도 중앙)로 세팅
+  for (int i = 0; i < NUM_CHANNELS; i++) {
+    currentAngles[i] = 90;
+    pwm.setPWM(i, 0, angleToPulse(90));
+    delay(50);
+  }
+
+  Serial.println("✅ Robot Arm Ready! Waiting for ROS commands...");
+  Serial.println("📋 Format: CHANNEL:ANGLE  (e.g. 0:90)");
 }
 
 void loop() {
-  // ROS로부터 시리얼 통신 데이터가 들어오면
+  // ROS로부터 시리얼 데이터가 들어오면
   if (Serial.available() > 0) {
     String data = Serial.readStringUntil('\n');
-    
-    // ':' 기준으로 데이터 쪼개기
+    data.trim();
+
+    // ':' 기준으로 채널과 각도 분리
     int separatorIndex = data.indexOf(':');
-    
+
     if (separatorIndex > 0) {
       int channel = data.substring(0, separatorIndex).toInt();
-      int angle = data.substring(separatorIndex + 1).toInt();
+      int angle   = data.substring(separatorIndex + 1).toInt();
 
-      // 안전을 위해 각도를 0~180도로 제한
+      // 유효 채널 범위 확인
+      if (channel < 0 || channel >= NUM_CHANNELS) {
+        Serial.print("❌ Invalid channel: ");
+        Serial.println(channel);
+        return;
+      }
+
+      // 각도 제한
       angle = constrain(angle, 0, 180);
 
-      // 각도(0~180)를 PCA9685용 펄스 값(150~600)으로 변환
-      int pulse = map(angle, 0, 180, SERVOMIN, SERVOMAX);
+      // 부드러운 이동 실행
+      moveServoSmooth(channel, angle, 8);
 
-      // 모터 구동!
-      pwm.setPWM(channel, 0, pulse);
-
-      // ROS 쪽으로 잘 움직였다고 에코(Echo) 전송
-      Serial.print("Moved Motor [");
+      // ROS로 완료 에코 전송
+      Serial.print("✅ Moved Motor [");
       Serial.print(channel);
       Serial.print("] to ");
       Serial.print(angle);
       Serial.println(" degrees");
+
+    } else {
+      Serial.print("❌ Invalid format. Expected CHANNEL:ANGLE, got: ");
+      Serial.println(data);
     }
   }
-} 만들기→토픽으로 통신”의 핵심이 완전히 내 것이 된 거야.
+}
