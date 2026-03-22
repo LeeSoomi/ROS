@@ -97,4 +97,4 @@ ros2 launch realsense2_camera rs_launch.py
 
 터미널 2 (새 탭):
 source /opt/ros/humble/setup.bash
-ros2 run rq
+ros2 run rqt_image_view rqt_image_view
