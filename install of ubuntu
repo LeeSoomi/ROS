@@ -1,97 +1,66 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from geometry_msgs.msg import Point
+from std_msgs.msg import String
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
 
-class ColorTrackerNode(Node):
+class ColorTracker(Node):
     def __init__(self):
         super().__init__('color_tracker_node')
-        
-        # 1. ROS 이미지를 OpenCV 이미지로 변환해 주는 브릿지 초기화
-        self.bridge = CvBridge()
-        
-        # 2. Subscriber: 카메라 토픽 구독
+        # 카메라 원본 영상 토픽 구독
         self.subscription = self.create_subscription(
-            Image,
-            '/camera/camera/color/image_raw',  # 환경에 따라 '/camera/color/image_raw'일 수 있음
-            self.image_callback,
-            10)
-            
-        # 3. Publisher: 계산된 x, y 좌표를 /target_xy 토픽으로 발행
-        self.publisher_ = self.create_publisher(Point, '/target_xy', 10)
+            Image, '/camera/camera/color/image_raw', self.image_callback, 10)
         
-        self.get_logger().info('Color Tracker Node가 성공적으로 시작되었습니다.')
+        # 계산된 목표물 좌표를 보낼 토픽 생성
+        self.publisher_ = self.create_publisher(String, '/target_xy', 10)
+        self.bridge = CvBridge()
+        self.get_logger().info('👀 색상 추적 노드 시작! 카메라 대기 중...')
 
     def image_callback(self, msg):
         try:
-            # ROS Image 메시지를 OpenCV에서 처리할 수 있는 BGR 포맷으로 변환
-            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-        except Exception as e:
-            self.get_logger().error(f'이미지 변환 실패: {e}')
-            return
-
-        # BGR 이미지를 색상 추출이 쉬운 HSV 색상 공간으로 변환
-        hsv = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
-
-        # 4. 추출할 색상(파란색) 범위 설정 (필요시 이 수치를 변경해 다른 색상 추적 가능)
-        # HSV 기준 파란색 범위: H(100~140), S(150~255), V(0~255)
-        lower_blue = np.array([100, 150, 0])
-        upper_blue = np.array([140, 255, 255])
-
-        # 범위에 해당하는 색상만 흰색으로 남기는 마스크(Mask) 생성
-        mask = cv2.inRange(hsv, lower_blue, upper_blue)
-
-        # 노이즈(자잘한 점) 제거를 위한 모폴로지 연산
-        mask = cv2.erode(mask, None, iterations=2)
-        mask = cv2.dilate(mask, None, iterations=2)
-
-        # 5. 윤곽선(Contours) 찾기
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        if len(contours) > 0:
-            # 가장 면적이 큰 윤곽선(물체) 하나만 선택
-            c = max(contours, key=cv2.contourArea)
+            # ROS 이미지를 OpenCV 이미지로 변환
+            cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
             
-            # 모멘트(Moments)를 이용해 물체의 중심점(cx, cy) 계산
-            M = cv2.moments(c)
+            # 이미지를 HSV 색상 공간으로 변환 (빨간색 추출 세팅)
+            hsv = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
+            lower_red = np.array([0, 120, 70])
+            upper_red = np.array([10, 255, 255])
+            mask = cv2.inRange(hsv, lower_red, upper_red)
+            
+            # 색상 영역의 무게중심(모멘트) 계산
+            M = cv2.moments(mask)
             if M["m00"] > 0:
-                cx = int(M["m10"] / M["m00"])
-                cy = int(M["m01"] / M["m00"])
+                cX = int(M["m10"] / M["m00"])
+                cY = int(M["m01"] / M["m00"])
+                
+                # 추출한 X, Y 좌표를 ROS 토픽으로 전송
+                coord_msg = String()
+                coord_msg.data = f"{cX},{cY}"
+                self.publisher_.publish(coord_msg)
+                
+                # 디버깅용: 화면에 중심점 초록색으로 표시
+                cv2.circle(cv_image, (cX, cY), 5, (0, 255, 0), -1)
+            
+            # 결과 화면 출력
+            cv2.imshow("Color Tracker", cv_image)
+            cv2.imshow("Mask", mask)
+            cv2.waitKey(1)
+            
+        except Exception as e:
+            self.get_logger().error(f'이미지 처리 오류: {e}')
 
-                # 6. 중심 좌표를 Point 메시지로 담아 Publish
-                target_msg = Point()
-                target_msg.x = float(cx)
-                target_msg.y = float(cy)
-                target_msg.z = 0.0  # 2D 평면 좌표이므로 z는 0으로 둡니다
-                self.publisher_.publish(target_msg)
+def main():
+    rclpy.init()
+    node = ColorTracker()
+    rclpy.spin(node)
+    node.destroy_node()
+    cv2.destroyAllWindows()
+    rclpy.shutdown()
 
-                # 로그 출력 (터미널에서 좌표 확인용)
-                self.get_logger().info(f'목표물 좌표 발행 중 -> X: {cx}, Y: {cy}')
-
-                # 7. 영상에 시각적으로 중심점 그리기 (화면 확인용)
-                cv2.circle(cv_image, (cx, cy), 5, (0, 0, 255), -1)  # 빨간색 원
-                cv2.putText(cv_image, f"Target ({cx}, {cy})", (cx - 40, cy - 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-
-        # 카메라 원본(시각 효과 추가됨)과 마스크 영상을 화면에 띄움
-        cv2.imshow('Camera Vision', cv_image)
-        cv2.imshow('Color Mask', mask)
-        cv2.waitKey(1) # OpenCV 화면을 갱신하기 위한 필수 코드
-
-def main(args=None):
-    rclpy.init(args=args)
-    node = ColorTrackerNode()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        node.get_logger().info('Ctrl+C 입력 감지: 노드를 종료합니다.')
-    finally:
-        node.destroy_node()
-        cv2.destroyAllWindows()
-        rclpy.shutdown()
+if __name__ == '__main__':
+    main()
 
 if __name__ == '__main__':
     main()
