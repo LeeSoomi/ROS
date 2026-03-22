@@ -6,61 +6,113 @@ from cv_bridge import CvBridge
 import cv2
 import numpy as np
 
+
 class ColorTracker(Node):
     def __init__(self):
         super().__init__('color_tracker_node')
+
+        # 파라미터 선언 (런타임에서 변경 가능)
+        self.declare_parameter('image_topic', '/camera/camera/color/image_raw')
+        self.declare_parameter('target_topic', '/target_xy')
+        self.declare_parameter('image_width', 640)
+        self.declare_parameter('image_height', 480)
+
+        image_topic  = self.get_parameter('image_topic').get_parameter_value().string_value
+        target_topic = self.get_parameter('target_topic').get_parameter_value().string_value
+        self.image_width  = self.get_parameter('image_width').get_parameter_value().integer_value
+        self.image_height = self.get_parameter('image_height').get_parameter_value().integer_value
+
         # 카메라 원본 영상 토픽 구독
         self.subscription = self.create_subscription(
-            Image, '/camera/camera/color/image_raw', self.image_callback, 10)
-        
+            Image, image_topic, self.image_callback, 10)
+
         # 계산된 목표물 좌표를 보낼 토픽 생성
-        self.publisher_ = self.create_publisher(String, '/target_xy', 10)
+        self.publisher_ = self.create_publisher(String, target_topic, 10)
+
         self.bridge = CvBridge()
-        self.get_logger().info('👀 색상 추적 노드 시작! 카메라 대기 중...')
+
+        # HSV 색상 범위 (빨간색 - 두 구간)
+        self.lower_red1 = np.array([0,   120, 70])
+        self.upper_red1 = np.array([10,  255, 255])
+        self.lower_red2 = np.array([170, 120, 70])
+        self.upper_red2 = np.array([180, 255, 255])
+
+        self.get_logger().info('👀 색상 추적 노드 시작!')
+        self.get_logger().info(f'📷 구독 토픽: {image_topic}')
+        self.get_logger().info(f'📡 발행 토픽: {target_topic}')
+        self.get_logger().info(f'📐 해상도: {self.image_width} x {self.image_height}')
 
     def image_callback(self, msg):
         try:
             # ROS 이미지를 OpenCV 이미지로 변환
             cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-            
-            # 이미지를 HSV 색상 공간으로 변환 (빨간색 추출 세팅)
+
+            # 이미지를 HSV 색상 공간으로 변환
             hsv = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
-            lower_red = np.array([0, 120, 70])
-            upper_red = np.array([10, 255, 255])
-            mask = cv2.inRange(hsv, lower_red, upper_red)
-            
+
+            # 빨간색은 HSV에서 두 구간에 걸침 → 두 마스크를 합산
+            mask1 = cv2.inRange(hsv, self.lower_red1, self.upper_red1)
+            mask2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
+            mask  = cv2.bitwise_or(mask1, mask2)
+
+            # 노이즈 제거 (모폴로지 연산)
+            kernel = np.ones((5, 5), np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
             # 색상 영역의 무게중심(모멘트) 계산
             M = cv2.moments(mask)
             if M["m00"] > 0:
                 cX = int(M["m10"] / M["m00"])
                 cY = int(M["m01"] / M["m00"])
-                
+
+                # 화면 중심과의 오차 계산
+                center_x = self.image_width  // 2
+                center_y = self.image_height // 2
+                error_x = cX - center_x
+                error_y = cY - center_y
+
                 # 추출한 X, Y 좌표를 ROS 토픽으로 전송
                 coord_msg = String()
                 coord_msg.data = f"{cX},{cY}"
                 self.publisher_.publish(coord_msg)
-                
-                # 디버깅용: 화면에 중심점 초록색으로 표시
+
+                # 디버깅용 시각화
                 cv2.circle(cv_image, (cX, cY), 5, (0, 255, 0), -1)
-            
+                cv2.circle(cv_image, (center_x, center_y), 5, (255, 0, 0), -1)
+                cv2.line(cv_image, (center_x, center_y), (cX, cY), (0, 255, 255), 2)
+                cv2.putText(cv_image, f"X:{cX} Y:{cY}", (cX + 10, cY - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                cv2.putText(cv_image, f"Err X:{error_x} Y:{error_y}", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+                self.get_logger().info(
+                    f'🎯 추적 좌표: X={cX}, Y={cY} | 오차: dX={error_x}, dY={error_y}')
+            else:
+                cv2.putText(cv_image, "No Target", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
             # 결과 화면 출력
             cv2.imshow("Color Tracker", cv_image)
             cv2.imshow("Mask", mask)
             cv2.waitKey(1)
-            
+
         except Exception as e:
             self.get_logger().error(f'이미지 처리 오류: {e}')
+
 
 def main():
     rclpy.init()
     node = ColorTracker()
-    rclpy.spin(node)
-    node.destroy_node()
-    cv2.destroyAllWindows()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('🛑 노드 종료 요청')
+    finally:
+        node.destroy_node()
+        cv2.destroyAllWindows()
+        rclpy.shutdown()
 
-if __name__ == '__main__':
-    main()
 
 if __name__ == '__main__':
     main()
